@@ -32,7 +32,7 @@ The following commands are available through the VRChat status plugin:
 | Command | Description |
 |---------|-------------|
 | `/vrcstatus` | Shows overall VRChat server status and individual component health |
-| `/vrcincident` | Lists current unresolved incidents/disruptions |
+| `/vrcincident` | Lists recent incidents (including resolved ones) |
 | `/vrcmaintenance` | Shows scheduled and active maintenance windows |
 
 ## How to interpret results
@@ -59,7 +59,7 @@ The following commands are available through the VRChat status plugin:
 **Action:** Run `/vrcstatus` to check the overall server status and component health.
 
 **User:** "VRChat最近有什么故障吗？"
-**Action:** Run `/vrcincident` to list any unresolved incidents.
+**Action:** Run `/vrcincident` to list recent incidents.
 
 **User:** "VRChat有维护计划吗？"
 **Action:** Run `/vrcmaintenance` to check for scheduled or active maintenance.
@@ -69,4 +69,8 @@ The following commands are available through the VRChat status plugin:
 
 ## Data source
 
-All data is fetched from the official VRChat Statuspage at https://status.vrchat.com/ via the Statuspage.io public API (`/api/v2/summary.json`).
+All data is fetched from the official VRChat Statuspage at https://status.vrchat.com/ via the Statuspage.io public API:
+
+- `/api/v2/summary.json` — overall status, components, unresolved incidents, and upcoming/active maintenances (used by `/vrcstatus`)
+- `/api/v2/incidents.json` — 50 most recent incidents including resolved ones (used by `/vrcincident`)
+- `/api/v2/scheduled-maintenances.json` — 50 most recent scheduled maintenances including completed ones (used by `/vrcmaintenance`)

@@ -54,13 +54,13 @@ IMPACT_MAP = {
 }
 
 
-@register("vrchat_status", "超级有节操的逆袭", "查询 VRChat 服务器状态及相关信息", "1.1.0")
+@register("vrchat_status", "超级有节操的逆袭", "查询 VRChat 服务器状态及相关信息", "1.2.0")
 class VRChatStatusPlugin(Star):
     """VRChat 服务器状态查询插件
 
     提供以下指令：
       /vrcstatus     - 查询整体状态及各组件运行情况
-      /vrcincident   - 查询未解决的事件/故障
+      /vrcincident   - 查询最近的事件/故障
       /vrcmaintenance - 查询计划维护
     """
 
@@ -231,10 +231,10 @@ class VRChatStatusPlugin(Star):
 
     @filter.command("vrcincident")
     async def vrcincident(self, event: AstrMessageEvent):
-        """查询 VRChat 未解决的事件/故障记录"""
+        """查询 VRChat 最近的事件/故障记录"""
         try:
-            # summary.json 包含未解决的事件信息
-            data = await self._fetch_json("summary.json")
+            # incidents.json 返回最近 50 个事件（含已解决的）
+            data = await self._fetch_json("incidents.json")
         except Exception as e:
             logger.error(f"获取 VRChat 事件失败: {e}")
             yield event.plain_result(f"❌ 获取 VRChat 事件失败: {e}")
@@ -242,14 +242,17 @@ class VRChatStatusPlugin(Star):
 
         incidents = data.get("incidents", [])
         if not incidents:
-            yield event.plain_result("✅ 当前没有未解决的 VRChat 事件")
+            yield event.plain_result("✅ 最近没有 VRChat 事件记录")
             return
 
+        # 只显示最近 5 个事件
+        recent = incidents[:5]
+
         lines: list[str] = []
-        lines.append("🎮 VRChat 未解决事件")
+        lines.append("🎮 VRChat 最近事件")
         lines.append("━" * 24)
 
-        for inc in incidents:
+        for inc in recent:
             name = inc.get("name", "未知事件")
             inc_status = inc.get("status", "unknown")
             status_text = INCIDENT_STATUS_MAP.get(inc_status, inc_status)
@@ -278,8 +281,8 @@ class VRChatStatusPlugin(Star):
     async def vrcmaintenance(self, event: AstrMessageEvent):
         """查询 VRChat 计划维护"""
         try:
-            # summary.json 包含计划维护信息
-            data = await self._fetch_json("summary.json")
+            # scheduled-maintenances.json 返回最近 50 个维护记录（含已完成的）
+            data = await self._fetch_json("scheduled-maintenances.json")
         except Exception as e:
             logger.error(f"获取 VRChat 维护信息失败: {e}")
             yield event.plain_result(f"❌ 获取 VRChat 维护信息失败: {e}")
@@ -290,11 +293,14 @@ class VRChatStatusPlugin(Star):
             yield event.plain_result("✅ 目前没有 VRChat 计划维护")
             return
 
+        # 只显示最近 5 个维护记录
+        recent_maintenances = maintenances[:5]
+
         lines: list[str] = []
         lines.append("🎮 VRChat 计划维护")
         lines.append("━" * 24)
 
-        for mnt in maintenances:
+        for mnt in recent_maintenances:
             name = mnt.get("name", "未知维护")
             mnt_status = mnt.get("status", "unknown")
             status_text = MAINTENANCE_STATUS_MAP.get(mnt_status, mnt_status)

@@ -28,7 +28,11 @@
 - 状态页：https://status.vrchat.com/
 - API 端点：`https://status.vrchat.com/api/v2/summary.json`
 
-> **注意**：VRChat 的 Statuspage 不支持 `incidents.json` 和 `scheduled_maintenances.json` 等独立端点，本插件统一使用 `summary.json` 获取所有状态信息。
+| 指令 | API 端点 | 数据内容 |
+|------|---------|--------|
+| `/vrcstatus` | `summary.json` | 整体状态、组件、未解决事件、计划维护 |
+| `/vrcincident` | `incidents.json` | 最近 50 个事件（含已解决的） |
+| `/vrcmaintenance` | `scheduled-maintenances.json` | 最近 50 个维护记录（含已完成的） |
 
 ## 安装
 
