@@ -54,7 +54,7 @@ IMPACT_MAP = {
 }
 
 
-@register("vrchat_status", "超级有节操的逆袭", "查询 VRChat 服务器状态及相关信息", "1.0.1")
+@register("vrchat_status", "超级有节操的逆袭", "查询 VRChat 服务器状态及相关信息", "1.1.0")
 class VRChatStatusPlugin(Star):
     """VRChat 服务器状态查询插件
 
