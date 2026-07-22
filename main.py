@@ -1,5 +1,5 @@
 import aiohttp
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.star import Context, Star, register
@@ -7,6 +7,12 @@ from astrbot.api import logger
 
 # VRChat Statuspage API 基础地址
 VRCHAT_STATUS_API = "https://status.vrchat.com/api/v2"
+
+# CloudFront CDN 基础地址（公开指标数据）
+CDN_BASE = "https://d31qqo63tn8lj0.cloudfront.net"
+
+# 北京时间 UTC+8
+CST = timezone(timedelta(hours=8))
 
 # ── 状态映射表 ──
 
@@ -51,17 +57,29 @@ IMPACT_MAP = {
     "minor": "轻微影响",
     "major": "较大影响",
     "critical": "严重影响",
+    "maintenance": "计划维护",
 }
 
+# 指标定义: (名称, emoji, CDN路径, 格式, 是否毫秒, 是否百分比)
+METRICS_DEF = [
+    ("在线用户", "👥", "visits.json", "int", False, False),
+    ("API 延迟", "⏱️", "apilatency.json", "ms", True, False),
+    ("API 请求量", "📈", "apirequests.json", "float", False, False),
+    ("API 错误率", "❌", "apierrors.json", "pct", False, True),
+    ("Steam 认证", "🔐", "extauth_steam.json", "pct", False, True),
+    ("Meta 认证", "🔐", "extauth_oculus.json", "pct", False, True),
+]
 
-@register("vrchat_status", "超级有节操的逆袭", "查询 VRChat 服务器状态及相关信息", "1.2.0")
+
+@register("vrchat_status", "超级有节操的逆袭", "查询 VRChat 服务器状态及相关信息", "1.3.0")
 class VRChatStatusPlugin(Star):
     """VRChat 服务器状态查询插件
 
     提供以下指令：
-      /vrcstatus     - 查询整体状态及各组件运行情况
-      /vrcincident   - 查询最近的事件/故障
-      /vrcmaintenance - 查询计划维护
+      /vrcstatus       - 查询整体状态及各组件运行情况
+      /vrcincident     - 查询最近的事件/故障
+      /vrcmaintenance  - 查询计划维护
+      /vrcmetrics      - 查询实时指标（在线用户、API延迟、错误率等）
     """
 
     def __init__(self, context: Context):
@@ -71,7 +89,7 @@ class VRChatStatusPlugin(Star):
     async def initialize(self):
         """插件初始化，创建 aiohttp 会话"""
         self._session = self._create_session()
-        logger.info("VRChat 状态查询插件已加载")
+        logger.info("VRChat 状态查询插件已加载 (v1.3.0)")
 
     async def terminate(self):
         """插件销毁，关闭 aiohttp 会话"""
@@ -111,14 +129,33 @@ class VRChatStatusPlugin(Star):
             resp.raise_for_status()
             return await resp.json()
 
+    async def _fetch_cdn_json(self, path: str) -> list:
+        """从 CloudFront CDN 获取指标 JSON 数据
+
+        Args:
+            path: CDN 路径，如 "visits.json"
+
+        Returns:
+            解析后的 JSON 列表（时间序列数据点）
+
+        Raises:
+            aiohttp.ClientError: 网络请求失败时抛出
+        """
+        session = await self._get_session()
+        url = f"{CDN_BASE}/{path}"
+        async with session.get(url) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     @staticmethod
     def _format_date(date_str: str | None) -> str:
-        """将 ISO 8601 日期字符串格式化为可读形式"""
+        """将 ISO 8601 日期字符串格式化为北京时间 (UTC+8)"""
         if not date_str:
             return "未知"
         try:
             dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-            return dt.strftime("%Y-%m-%d %H:%M UTC")
+            dt_cst = dt.astimezone(CST)
+            return dt_cst.strftime("%Y-%m-%d %H:%M CST")
         except (ValueError, AttributeError):
             return date_str
 
@@ -140,6 +177,36 @@ class VRChatStatusPlugin(Star):
         if len(text) > max_len:
             return text[:max_len] + "..."
         return text
+
+    @staticmethod
+    def _calc_stats(data_points: list, *, is_ms: bool = False, is_pct: bool = False) -> dict | None:
+        """计算时间序列的统计值（最新、平均、最小、最大）"""
+        if not data_points:
+            return None
+        values = [p[1] for p in data_points]
+        if is_ms:
+            values = [v * 1000 for v in values]
+        if is_pct:
+            values = [v * 100 for v in values]
+        return {
+            "latest": values[-1],
+            "avg": sum(values) / len(values),
+            "min": min(values),
+            "max": max(values),
+        }
+
+    @staticmethod
+    def _fmt_val(v: float, fmt: str) -> str:
+        """按格式类型格式化数值"""
+        if fmt == "int":
+            return f"{int(v):,}"
+        if fmt == "ms":
+            return f"{v:.0f}ms"
+        if fmt == "pct":
+            return f"{v:.2f}%"
+        if fmt == "float":
+            return f"{v:.2f}"
+        return str(v)
 
     # ── 指令处理 ──
 
@@ -224,6 +291,29 @@ class VRChatStatusPlugin(Star):
                 inc_status = inc.get("status", "unknown")
                 status_text = INCIDENT_STATUS_MAP.get(inc_status, inc_status)
                 lines.append(f"  • {name} [{status_text}]")
+
+        # 展开未完成维护的详细信息（含受影响组件）
+        if active_maint:
+            lines.append("\n🔧 未完成维护详情:")
+            for mnt in active_maint:
+                name = mnt.get("name", "未知维护")
+                mnt_status = mnt.get("status", "unknown")
+                status_text = MAINTENANCE_STATUS_MAP.get(mnt_status, mnt_status)
+                scheduled_for = self._format_date(mnt.get("scheduled_for"))
+                scheduled_until = self._format_date(mnt.get("scheduled_until"))
+                # 最新更新内容
+                latest = self._get_latest_update(mnt)
+                latest_body = self._truncate(latest["body"]) if latest and latest.get("body") else "暂无更新"
+                # 受影响组件
+                affected = mnt.get("components", [])
+                comp_names = [c.get("name", "未知") for c in affected] if affected else ["无"]
+                lines.extend([
+                    f"\n  🔧 {name}",
+                    f"     状态: {status_text}",
+                    f"     计划时间: {scheduled_for} ~ {scheduled_until}",
+                    f"     最新更新: {latest_body}",
+                    f"     受影响组件: {', '.join(comp_names)}",
+                ])
 
         lines.append(f"🔗 详情: https://status.vrchat.com/")
 
@@ -322,7 +412,43 @@ class VRChatStatusPlugin(Star):
                     body = self._truncate(body)
                     lines.append(f"   更新: {body}")
 
+            # 受影响组件
+            affected = mnt.get("components", [])
+            if affected:
+                comp_names = [c.get("name", "未知") for c in affected]
+                lines.append(f"   受影响组件: {', '.join(comp_names)}")
+
         lines.append("\n" + "━" * 24)
         lines.append(f"🔗 详情: https://status.vrchat.com/")
+
+        yield event.plain_result("\n".join(lines))
+
+    @filter.command("vrcmetrics")
+    async def vrcmetrics(self, event: AstrMessageEvent):
+        """查询 VRChat 实时指标（在线用户、API延迟、请求量、错误率、认证成功率）"""
+        lines: list[str] = []
+        lines.append("📊 VRChat 实时指标 (24h)")
+        lines.append("━" * 24)
+
+        for label, emoji, cdn_path, fmt, is_ms, is_pct in METRICS_DEF:
+            try:
+                data = await self._fetch_cdn_json(cdn_path)
+                stats = self._calc_stats(data, is_ms=is_ms, is_pct=is_pct)
+            except Exception as e:
+                logger.warning(f"获取指标 {cdn_path} 失败: {e}")
+                stats = None
+
+            if stats is None:
+                lines.append(f"\n{emoji} {label}: 暂无数据")
+            else:
+                lines.append(
+                    f"\n{emoji} {label}: {self._fmt_val(stats['latest'], fmt)} | "
+                    f"平均: {self._fmt_val(stats['avg'], fmt)} | "
+                    f"最低: {self._fmt_val(stats['min'], fmt)} | "
+                    f"最高: {self._fmt_val(stats['max'], fmt)}"
+                )
+
+        lines.append("\n" + "━" * 24)
+        lines.append("🔗 官方状态页: https://status.vrchat.com/")
 
         yield event.plain_result("\n".join(lines))
