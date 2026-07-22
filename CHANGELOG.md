@@ -4,6 +4,26 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/)。
 
+## [v1.3.0] - 2026-07-22
+
+### 新增
+
+- `/vrcmetrics` 指令：查询 VRChat 实时指标（24h 统计）
+  - 👥 在线用户数
+  - ⏱️ API 延迟 (ms)
+  - 📈 API 请求量
+  - ❌ API 错误率 (%)
+  - 🔐 Steam 认证成功率 (%)
+  - 🔐 Meta/Oculus 认证成功率 (%)
+  - 数据来源：VRChat CloudFront CDN
+
+### 变更
+
+- 所有时间戳从 UTC 改为北京时间 (UTC+8) 显示
+- `/vrcstatus` 增强：活跃维护现在显示受影响的具体组件
+- `/vrcmaintenance` 增强：每个维护记录现在显示受影响的组件
+- 更新 SKILL.md，新增 metrics 命令说明和使用示例
+
 ## [v1.2.0] - 2026-07-15
 
 ### 新增
